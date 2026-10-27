@@ -42,6 +42,15 @@ class ReleaseTests(unittest.TestCase):
         ]
         self.assertEqual(set(release.select_versions(upstream, set())), {'v1.14.4', 'v1.15.0-rc.1'})
 
+    def test_historical_nonstandard_tag_does_not_block_current_releases(self):
+        upstream = [
+            {'tag_name': 'v1.14.4', 'prerelease': False, 'draft': False},
+            {'tag_name': 'v1.3-rc2', 'prerelease': True, 'draft': False},
+        ]
+        self.assertEqual(release.select_versions(upstream, set()), ['v1.14.4'])
+        with self.assertRaises(ValueError):
+            release.validate_tag('v1.3-rc2')
+
     def test_latest_stable_and_preview_skip_published_and_drafts(self):
         upstream = [
             {'tag_name': 'v1.15.0-alpha.2', 'prerelease': True, 'draft': False},

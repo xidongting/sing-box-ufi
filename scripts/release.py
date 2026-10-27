@@ -30,7 +30,11 @@ def select_versions(upstream, published):
     for item in upstream:
         if item['draft']:
             continue
-        tag = validate_tag(item['tag_name'])
+        try:
+            tag = validate_tag(item['tag_name'])
+        except ValueError:
+            # Historical release names (e.g. v1.3-rc2) are not current build targets.
+            continue
         channel = item['prerelease']
         if channel not in latest or version_key(tag) > version_key(latest[channel]):
             latest[channel] = tag
