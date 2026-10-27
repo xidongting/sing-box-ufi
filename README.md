@@ -6,7 +6,7 @@
 
 ## 当前状态
 
-本地开发版本，尚未创建公开 GitHub 仓库、运行远程 Actions 或做设备验证。
+公开仓库：[xidongting/sing-box-ufi](https://github.com/xidongting/sing-box-ufi)。插件 v0.1.0 已发布，远程 Checks 与插件发布工作流通过；首次内核构建正在验证，设备尚未实测。内核是否可下载以 [Releases](https://github.com/xidongting/sing-box-ufi/releases) 为准。
 
 | 目标 | 状态 |
 | --- | --- |
@@ -18,10 +18,12 @@
 
 ## 使用
 
-发布前先明确 GitHub `owner/repo`。本地生成绑定该仓库的插件：
+设备首次使用：下载 [sing-box-ufi.js](https://github.com/xidongting/sing-box-ufi/releases/latest/download/sing-box-ufi.js)，按下述步骤在 UFI Tools 导入。不要把 GitHub 的 Source code ZIP 当成插件，也不用把内核手动复制到设备。
+
+本地生成绑定该仓库的插件（维护者使用）：
 
 ```sh
-python3 scripts/package-plugin.py --repo OWNER/sing-box-ufi
+python3 scripts/package-plugin.py --repo xidongting/sing-box-ufi
 ```
 
 1. UFI Tools 插件管理中导入 `dist/plugin/sing-box-ufi.js`，保存并刷新页面。
@@ -33,7 +35,7 @@ python3 scripts/package-plugin.py --repo OWNER/sing-box-ufi
 发布插件后可添加原生插件源：
 
 ```text
-https://github.com/OWNER/REPO/releases/latest/download/plugins.json
+https://github.com/xidongting/sing-box-ufi/releases/latest/download/plugins.json
 ```
 
 插件 Release 被设为 latest；内核 Release 不占用 latest。内核升级不要求重装插件。GitHub API/Release 在浏览器和设备均需可达；浏览器只访问 API，资产通过设备 curl 下载，以避开 Release 跨域限制。不使用公共下载代理或要求填写 GitHub 凭证。未认证 API 可能限流。
@@ -86,7 +88,7 @@ Shell 需要 `base64`、`sha256sum`、`mktemp`、`nohup`、`readlink` 及 `/proc
 - `plugin-vX.Y.Z`：插件独立 Release。先改 `package.json` 及 lockfile 版本，再创建对应 tag；也可手动运行 workflow。已公开 Release 不自动覆盖。
 - GitHub 定时任务只在默认分支运行，执行可能延迟；长期无活动的公共仓库可能被 GitHub 暂停 schedule。
 
-本仓库的工作流仅在你授权创建并推送远程仓库后运行。本地开发不调用远程发布。
+公开仓库已启用工作流。设备不会随 Release 自动升级；仍须在插件里选择版本并点击安装。
 
 ## 本地检查
 
