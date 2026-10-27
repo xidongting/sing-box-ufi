@@ -1,0 +1,13 @@
+{
+  "name": "sing-box-ufi",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "typecheck": "tsc --noEmit",
+    "test:ui": "node --test tests/plugin.test.cjs",
+    "check": "node --check plugin/plugin.js && npm run typecheck && npm run test:ui"
+  },
+  "devDependencies": {
+    "typescript": "5.9.3"
+  }
+}

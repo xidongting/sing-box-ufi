@@ -1,0 +1,50 @@
+name: Publish interface plugin
+on:
+  push:
+    tags: ['plugin-v*']
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: plugin-release
+  cancel-in-progress: false
+jobs:
+  package:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --ignore-scripts
+      - run: npm run check
+      - name: Package native plugin and source index
+        env:
+          REPOSITORY: ${{ github.repository }}
+        run: python3 scripts/package-plugin.py --repo "$REPOSITORY"
+      - name: Publish independently from core
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          version=$(node -p 'require("./package.json").version')
+          tag="plugin-v$version"
+          if [ "$GITHUB_REF_TYPE" = tag ] && [ "$GITHUB_REF_NAME" != "$tag" ]; then
+            echo 'Plugin version/tag mismatch' >&2
+            exit 1
+          fi
+          if gh release view "$tag" --repo "$REPOSITORY" --json isDraft > existing.json 2>/dev/null; then
+            if [ "$(jq -r .isDraft existing.json)" = false ]; then
+              echo 'Published plugin is immutable; bump package.json first.'
+              exit 0
+            fi
+          else
+            gh release create "$tag" --repo "$REPOSITORY" --target "$GITHUB_SHA" --draft \
+              --title "sing-box UFI interface $version" --notes 'Import sing-box-ufi.js in UFI Tools. Kernel upgrades are separate and manual.'
+          fi
+          gh release upload "$tag" dist/plugin/* --repo "$REPOSITORY" --clobber
+          gh release edit "$tag" --repo "$REPOSITORY" --draft=false --prerelease=false --latest

@@ -1,0 +1,131 @@
+name: Follow sing-box releases
+on:
+  schedule:
+    - cron: '23 3 * * *'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Published official tag; empty = latest stable and prerelease'
+        type: string
+permissions:
+  contents: read
+concurrency:
+  group: core-release
+  cancel-in-progress: false
+jobs:
+  discover:
+    runs-on: ubuntu-latest
+    outputs:
+      tags: ${{ steps.discover.outputs.tags }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: discover
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPOSITORY: ${{ github.repository }}
+          REQUESTED_TAG: ${{ inputs.tag }}
+        run: python3 scripts/release.py discover --repo "$REPOSITORY" --tag "$REQUESTED_TAG"
+  build:
+    needs: discover
+    if: needs.discover.outputs.tags != '[]'
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        tag: ${{ fromJSON(needs.discover.outputs.tags) }}
+        arch: [arm64, arm]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/checkout@v4
+        with:
+          repository: SagerNet/sing-box
+          ref: ${{ matrix.tag }}
+          path: upstream
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Read official Android CLI build settings
+        id: settings
+        run: |
+          python3 -m pip install 'PyYAML==6.0.2'
+          python3 scripts/build-settings.py upstream > settings.json
+          echo "go=$(jq -r .go settings.json)" >> "$GITHUB_OUTPUT"
+          echo "ndk=$(jq -r .ndk settings.json)" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-go@v5
+        with:
+          go-version: ${{ steps.settings.outputs.go }}
+          cache-dependency-path: upstream/go.sum
+      - name: Install matching Android NDK
+        env:
+          NDK_VERSION: ${{ steps.settings.outputs.ndk }}
+        run: sdkmanager "ndk;$NDK_VERSION"
+      - name: Build unmodified official source
+        env:
+          TAG: ${{ matrix.tag }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          set -euo pipefail
+          SETTINGS="$PWD/settings.json"
+          TAGS=$(jq -r .tags "$SETTINGS")
+          LDFLAGS=$(jq -r .ldflags "$SETTINGS")
+          export CC="$(jq -r --arg arch "$ARCH" '.compilers[$arch]' "$SETTINGS")-clang"
+          export CXX="${CC}++"
+          cd upstream
+          go install ./cmd/internal/build
+          CGO_ENABLED=1 GOOS=android GOARCH="$ARCH" "$(go env GOPATH)/bin/build" \
+            go build -v -trimpath -o ../sing-box -tags "$TAGS" \
+            -ldflags "-X github.com/sagernet/sing-box/constant.Version=${TAG#v} $LDFLAGS -s -w -buildid=" ./cmd/sing-box
+          # Include dependency sources alongside upstream source for redistribution.
+          go mod vendor
+          tar --exclude=.git -czf ../source.tar.gz .
+      - name: Package and record provenance
+        env:
+          TAG: ${{ matrix.tag }}
+          ARCH: ${{ matrix.arch }}
+        run: |
+          python3 scripts/release.py package --out dist --binary sing-box --source source.tar.gz \
+            --license upstream/LICENSE --tag "$TAG" --arch "$ARCH" \
+            --commit "$(git -C upstream rev-parse HEAD)" --settings settings.json
+      - uses: actions/upload-artifact@v4
+        with:
+          name: core-${{ matrix.tag }}-${{ matrix.arch }}
+          path: dist/
+          retention-days: 7
+  publish:
+    needs: [discover, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    strategy:
+      matrix:
+        tag: ${{ fromJSON(needs.discover.outputs.tags) }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: core-${{ matrix.tag }}-*
+          path: dist
+          merge-multiple: true
+      - name: Publish complete release, never device auto-update
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ matrix.tag }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          release="core-$TAG"
+          if gh release view "$release" --repo "$REPOSITORY" --json isDraft > existing.json 2>/dev/null; then
+            if [ "$(jq -r .isDraft existing.json)" = false ]; then
+              echo 'Published release is immutable; nothing to overwrite.'
+              exit 0
+            fi
+          else
+            gh release create "$release" --repo "$REPOSITORY" --target "$GITHUB_SHA" --draft \
+              --title "sing-box $TAG (community Android CLI build)" \
+              --notes "Unmodified SagerNet/sing-box $TAG. Sources, dependency sources, license and build settings attached. Plugin released separately. No device auto-update."
+          fi
+          gh release upload "$release" dist/* --repo "$REPOSITORY" --clobber
+          if [[ "$TAG" == *-* ]]; then
+            gh release edit "$release" --repo "$REPOSITORY" --draft=false --prerelease --latest=false
+          else
+            gh release edit "$release" --repo "$REPOSITORY" --draft=false --prerelease=false --latest=false
+          fi
