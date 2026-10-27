@@ -80,9 +80,9 @@ Shell 需要 `base64`、`sha256sum`、`mktemp`、`nohup`、`readlink` 及 `/proc
 ## 自动构建与发布
 
 - `core.yml`：UTC 03:23 每天检查一次最新稳定版和最新预发布版，各渠道有新版本才构建；支持手动指定官方已发布 tag。每日检查会跳过同一天已被更新版本取代的中间版本，按需手动补构建。
-- 读取对应 tag 官方 Android CLI workflow、Go 版本、NDK 固定版本、默认功能标签、链接参数。上游结构改变无法识别时失败，人工更新适配器，不静默猜参数。
+- 按版本号选取各渠道最新版本，不依赖 GitHub API 的返回顺序。读取对应 tag 官方 Android CLI workflow、Go 版本、NDK 固定版本、默认功能标签、完整链接参数。未知编译参数或目标选项会失败，人工更新适配器，不静默猜参数。
 - ARM64/ARM 构建成功后才发布完整 Release；失败产物不会作为可安装 Release 出现。
-- `core-vX.Y.Z…`：内核 Release。包含原始二进制、分架构 SHA-256、源码 commit 与构建信息、上游许可证，以及含 vendor 依赖的对应源码包。
+- `core-vX.Y.Z…`：内核 Release。包含原始二进制、分架构 SHA-256、源码 commit 与构建信息、上游许可证，以及含 vendor 依赖的对应源码包、此次构建使用的仓库脚本快照。
 - `plugin-vX.Y.Z`：插件独立 Release。先改 `package.json` 及 lockfile 版本，再创建对应 tag；也可手动运行 workflow。已公开 Release 不自动覆盖。
 - GitHub 定时任务只在默认分支运行，执行可能延迟；长期无活动的公共仓库可能被 GitHub 暂停 schedule。
 
@@ -93,7 +93,9 @@ Shell 需要 `base64`、`sha256sum`、`mktemp`、`nohup`、`readlink` 及 `/proc
 ```sh
 npm ci --ignore-scripts
 npm run check                          # JS 语法、TypeScript checkJs、原生插件加载检查
-python3 -m unittest discover -s tests -v
+python3 -m venv .venv
+.venv/bin/pip install -r requirements-dev.txt
+.venv/bin/python -m unittest discover -s tests -v
 sh -n device/manager.sh
 ```
 
@@ -101,7 +103,7 @@ macOS 会跳过依赖 Linux `/proc` 的进程测试。完整轻量测试可用 L
 
 ```sh
 docker run --rm -v "$PWD:/work" -w /work python:3.12-bookworm \
-  python -m unittest discover -s tests -v
+  sh -c 'pip install -r requirements-dev.txt && python -m unittest discover -s tests -v'
 docker run --rm -v "$PWD:/work" -w /work koalaman/shellcheck:stable \
   -s sh device/manager.sh
 go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.11 -shellcheck=''

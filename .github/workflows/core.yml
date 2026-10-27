@@ -67,16 +67,19 @@ jobs:
           SETTINGS="$PWD/settings.json"
           TAGS=$(jq -r .tags "$SETTINGS")
           LDFLAGS=$(jq -r .ldflags "$SETTINGS")
+          LDFLAGS=${LDFLAGS//__VERSION__/${TAG#v}}
           export CC="$(jq -r --arg arch "$ARCH" '.compilers[$arch]' "$SETTINGS")-clang"
           export CXX="${CC}++"
           cd upstream
           go install ./cmd/internal/build
           CGO_ENABLED=1 GOOS=android GOARCH="$ARCH" "$(go env GOPATH)/bin/build" \
             go build -v -trimpath -o ../sing-box -tags "$TAGS" \
-            -ldflags "-X github.com/sagernet/sing-box/constant.Version=${TAG#v} $LDFLAGS -s -w -buildid=" ./cmd/sing-box
+            -ldflags "$LDFLAGS" ./cmd/sing-box
           # Include dependency sources alongside upstream source for redistribution.
           go mod vendor
           tar --exclude=.git -czf ../source.tar.gz .
+          # Also ship the exact adapter/workflow used to build these binaries.
+          git -C .. archive --format=tar.gz --output=build-scripts.tar.gz HEAD
       - name: Package and record provenance
         env:
           TAG: ${{ matrix.tag }}
@@ -85,6 +88,8 @@ jobs:
           python3 scripts/release.py package --out dist --binary sing-box --source source.tar.gz \
             --license upstream/LICENSE --tag "$TAG" --arch "$ARCH" \
             --commit "$(git -C upstream rev-parse HEAD)" --settings settings.json
+          cp build-scripts.tar.gz dist/
+          sha256sum dist/build-scripts.tar.gz | sed 's@dist/@@' >> "dist/SHA256SUMS-$ARCH"
       - uses: actions/upload-artifact@v4
         with:
           name: core-${{ matrix.tag }}-${{ matrix.arch }}

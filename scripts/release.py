@@ -15,20 +15,26 @@ def validate_tag(tag):
     return tag
 
 
+def version_key(tag):
+    validate_tag(tag)
+    core, _, preview = tag[1:].partition('-')
+    numbers = tuple(map(int, core.split('.')))
+    if not preview:
+        return (*numbers, 3, 0)
+    channel, number = preview.split('.')
+    return (*numbers, {'alpha': 0, 'beta': 1, 'rc': 2}[channel], int(number))
+
+
 def select_versions(upstream, published):
-    selected = []
-    seen = set()
+    latest = {}
     for item in upstream:
         if item['draft']:
             continue
-        channel = item['prerelease']
-        if channel in seen:
-            continue
         tag = validate_tag(item['tag_name'])
-        seen.add(channel)
-        if 'core-' + tag not in published:
-            selected.append(tag)
-    return selected
+        channel = item['prerelease']
+        if channel not in latest or version_key(tag) > version_key(latest[channel]):
+            latest[channel] = tag
+    return [tag for tag in latest.values() if 'core-' + tag not in published]
 
 
 def releases(repo):

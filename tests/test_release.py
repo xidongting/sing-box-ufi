@@ -32,6 +32,16 @@ class ReleaseTests(unittest.TestCase):
             self.assertTrue((out / 'sing-box-source-v1.14.4-arm64.tar.gz').exists())
             self.assertTrue((out / 'LICENSE.sing-box').exists())
 
+    def test_discovery_uses_versions_not_api_order_or_draft_channel_flags(self):
+        upstream = [
+            {'tag_name': 'v1.14.1', 'prerelease': False, 'draft': False},
+            {'tag_name': 'v1.15.0-alpha.9', 'prerelease': True, 'draft': False},
+            {'tag_name': 'v1.14.4', 'prerelease': False, 'draft': False},
+            {'tag_name': 'v1.15.0-alpha.10', 'prerelease': True, 'draft': False},
+            {'tag_name': 'v1.15.0-rc.1', 'prerelease': True, 'draft': False},
+        ]
+        self.assertEqual(set(release.select_versions(upstream, set())), {'v1.14.4', 'v1.15.0-rc.1'})
+
     def test_latest_stable_and_preview_skip_published_and_drafts(self):
         upstream = [
             {'tag_name': 'v1.15.0-alpha.2', 'prerelease': True, 'draft': False},

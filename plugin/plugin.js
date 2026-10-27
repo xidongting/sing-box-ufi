@@ -24,6 +24,21 @@
         if (match[1] !== '0') throw new Error(output || `Shell exit ${match[1]}`);
         return output;
     }
+    /** @param {string} config */
+    async function saveConfig(config) {
+        const encoded = encode(config);
+        const staged = (await shell(`umask 077; mktemp ${quote(home + '/.upload.XXXXXX')}`)).trim();
+        if (!/^\/data\/local\/tmp\/sing-box-ufi\/\.upload\.[A-Za-z0-9]+$/.test(staged)) throw new Error('Invalid staging path');
+        try {
+            // Keep each sh -c argument below Linux/Android MAX_ARG_STRLEN.
+            for (let offset = 0; offset < encoded.length; offset += 32768) {
+                await shell(`printf '%s' ${quote(encoded.slice(offset, offset + 32768))} >> ${quote(staged)}`);
+            }
+            return await shell(`set -e; umask 077; base64 -d ${quote(staged)} > ${quote(staged + '.json')}; ${command('save')} < ${quote(staged + '.json')}`);
+        } finally {
+            await shell(`rm -f ${quote(staged)} ${quote(staged + '.json')}`);
+        }
+    }
     async function setup() {
         // Install only our interface script; importing/opening the plugin never starts sing-box.
         await shell(`set -eu; umask 077; [ ! -L ${quote(home)} ]; mkdir -p ${quote(home)}; chmod 700 ${quote(home)}; t=$(mktemp ${quote(home + '/.manager.XXXXXX')}); trap 'rm -f "$t"' EXIT; printf '%s' ${quote(managerBase64)} | base64 -d > "$t"; chmod 700 "$t"; mv "$t" ${quote(home + '/manager.sh')}`);
@@ -134,7 +149,7 @@
                 }
                 if (action === 'save') {
                     if (new TextEncoder().encode(editor().value).length > 512 * 1024) throw new Error('首版编辑器限制 512 KiB；更大配置请通过终端管理');
-                    element('[data-output]').textContent = await shell(`printf '%s' ${quote(encode(editor().value))} | base64 -d | ${command('save')}`);
+                    element('[data-output]').textContent = await saveConfig(editor().value);
                 } else if (action === 'uninstall') {
                     if (!confirm('停止并卸载内核？配置默认保留。插件界面需在 UFI Tools 插件管理中另行删除。')) return;
                     const purge = confirm('是否同时删除 config.json？此操作不可撤销。取消则保留配置。');

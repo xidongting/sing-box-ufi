@@ -3,6 +3,7 @@ import json
 from pathlib import Path
 import re
 import sys
+import shlex
 
 import yaml
 
@@ -22,10 +23,17 @@ ndk = re.search(r'const fixedVersion = "([0-9.]+)"', ndk_source)
 if not ndk:
     raise ValueError('Upstream NDK discovery changed')
 build = next(s['run'] for s in steps if s.get('name') == 'Build Android')
-if 'CGO_ENABLED' not in next(s['env'] for s in steps if s.get('name') == 'Build Android'):
+build_env = next(s['env'] for s in steps if s.get('name') == 'Build Android')
+if str(build_env.get('CGO_ENABLED')) != '1' or set(build_env) - {'CGO_ENABLED', 'BUILD_GOOS', 'BUILD_GOARCH', 'GITHUB_TOKEN'}:
     raise ValueError('Upstream Android build environment changed')
-if 'build go build' not in build or './cmd/sing-box' not in build:
+normalized = build.replace('\\\n', ' ')
+match = re.search(r'build go build (.*?\./cmd/sing-box)(?:\s*$|\n)', normalized)
+if not match:
     raise ValueError('Upstream Android build command changed')
+arguments = shlex.split(match[1])
+expected = ['-v', '-trimpath', '-o', 'dist/sing-box', '-tags', '${BUILD_TAGS}', '-ldflags']
+if arguments[:7] != expected or len(arguments) != 9 or arguments[-1] != './cmd/sing-box':
+    raise ValueError('Upstream Android build flags changed; review adapter')
 tag_step = next(s['run'] for s in steps if s.get('name') == 'Set build tags')
 tags_file = source / 'release/DEFAULT_BUILD_TAGS_OTHERS'
 if 'release/DEFAULT_BUILD_TAGS_OTHERS' in tag_step and tags_file.exists():
@@ -36,12 +44,18 @@ else:
         raise ValueError('Upstream build tags changed; refusing guessed feature set')
     tags = match[1]
 ldflags_file = source / 'release/LDFLAGS'
-ldflags = ldflags_file.read_text().strip() if ldflags_file.exists() else ''
+ldflags = arguments[7].replace('${{ needs.calculate_version.outputs.version }}', '__VERSION__')
+if '${LDFLAGS_SHARED}' in ldflags:
+    ldflags = ldflags.replace('${LDFLAGS_SHARED}', ldflags_file.read_text().strip())
+if '$' in ldflags or '__VERSION__' not in ldflags:
+    raise ValueError('Upstream Android linker flags changed; review adapter')
 if not re.fullmatch(r'[a-z0-9_,]+', tags):
     raise ValueError('Invalid build tags')
 compilers = {}
 for entry in job['strategy']['matrix']['include']:
     if entry.get('os') == 'android' and entry['arch'] in ('arm', 'arm64'):
+        if set(entry) != {'os', 'arch', 'ndk'}:
+            raise ValueError('Upstream Android target options changed; review adapter')
         compiler = entry['ndk']
         if not re.fullmatch(r'[a-z0-9_-]+android(?:eabi)?\d+', compiler):
             raise ValueError('Invalid Android compiler')

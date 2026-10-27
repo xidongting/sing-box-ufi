@@ -106,6 +106,22 @@ int main(int argc, char **argv) {
         self.assertEqual(result.returncode, 0, result.stderr)
         self.assertFalse((self.home / 'sing-box.pid').exists())
 
+    def test_failed_config_validation_leaves_no_lock_or_staging_file(self):
+        self.home.mkdir()
+        core = self.home / 'sing-box'
+        core.write_text('#!/bin/sh\necho native-error >&2\nexit 9\n')
+        core.chmod(0o700)
+        result = self.run_cli('save', input='invalid')
+        self.assertEqual(result.returncode, 9)
+        self.assertIn('native-error', result.stderr)
+        self.assertFalse((self.home / '.lock').exists())
+        self.assertFalse(list(self.home.glob('.config.*')))
+
+    def test_autostart_toggle_without_existing_script_never_duplicates_headers(self):
+        for value in ('on', 'off', 'on', 'on'):
+            self.assertEqual(self.run_cli('autostart', value).returncode, 0)
+        self.assertEqual(self.boot.read_text().count('#!/system/bin/sh'), 1)
+
     def test_missing_configuration_is_not_created_on_status(self):
         result = self.run_cli('status')
         self.assertEqual(result.returncode, 0, result.stderr)
