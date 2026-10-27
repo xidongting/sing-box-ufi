@@ -54,6 +54,7 @@ jobs:
         with:
           go-version: ${{ steps.settings.outputs.go }}
           cache-dependency-path: upstream/go.sum
+      - uses: android-actions/setup-android@v3
       - name: Install matching Android NDK
         env:
           NDK_VERSION: ${{ steps.settings.outputs.ndk }}
