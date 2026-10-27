@@ -24,6 +24,8 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPOSITORY: ${{ github.repository }}
           REQUESTED_TAG: ${{ inputs.tag }}
+          # Avoid intermittent HTTP/2 CANCEL responses seen during paginated gh requests.
+          GODEBUG: http2client=0
         run: python3 scripts/release.py discover --repo "$REPOSITORY" --tag "$REQUESTED_TAG"
   build:
     needs: discover
