@@ -73,10 +73,10 @@ jobs:
           TAGS=$(jq -r .tags "$SETTINGS")
           LDFLAGS=$(jq -r .ldflags "$SETTINGS")
           LDFLAGS=${LDFLAGS//__VERSION__/${TAG#v}}
-          export CC="$(jq -r --arg arch "$ARCH" '.compilers[$arch]' "$SETTINGS")-clang"
-          export CXX="${CC}++"
           cd upstream
           go install ./cmd/internal/build
+          export CC="$(jq -r --arg arch "$ARCH" '.compilers[$arch]' "$SETTINGS")-clang"
+          export CXX="${CC}++"
           CGO_ENABLED=1 GOOS=android GOARCH="$ARCH" "$(go env GOPATH)/bin/build" \
             go build -v -trimpath -o ../sing-box -tags "$TAGS" \
             -ldflags "$LDFLAGS" ./cmd/sing-box
